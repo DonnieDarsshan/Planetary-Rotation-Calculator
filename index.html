@@ -9,13 +9,28 @@
   body{background:#0f172a;color:#e5e7eb;font-family:Arial,sans-serif;padding:20px}
   h1{font-size:22px;margin-bottom:10px}
   select,button{background:#020617;color:#e5e7eb;border:1px solid #334155;padding:4px 8px;margin-right:6px}
-  table{width:100%;border-collapse:collapse;margin-top:12px}
-  th,td{border:1px solid #334155;padding:6px;text-align:center}
+  table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:12px;
+  table-layout:fixed;
+}
+  th,td{
+  border:1px solid #334155;
+  padding:6px;
+  text-align:center;
+  word-wrap:break-word;
+  overflow-wrap:break-word;
+}
+
+
   th{background:#020617}
   select.deg-disabled{opacity:.4;pointer-events:none}
+
   .aspect-good{color:#22c55e;font-weight:600}
   .aspect-bad{color:#ef4444;font-weight:600}
-  .aspect-neutral{color:#e5e7eb;font-weight:600}
+  .aspect-neutral{color:#f59e0b;font-weight:600}
+  .aspect-white{color:#facc15;font-weight:700}
 </style>
 </head>
 
@@ -30,16 +45,19 @@
   <label><input type="checkbox" id="ignoreDegrees"> Ignore Degrees</label>
   <label><input type="checkbox" id="reverseCounting"> Retro</label>
   <label><input type="checkbox" id="legacyOppConj" checked> Subtract 180°</label>
-  <label><input type="checkbox" id="showRawDegrees"> (0–360)</label>
   <label><input type="checkbox" id="pivotRowFromLagna" checked> Actual Position</label>
 
   <label><input type="radio" name="houseSystem" value="KP"> KP</label>
   <label><input type="radio" name="houseSystem" value="Vedic" checked> Vedic</label>
 
-  <button id="clearBtn">Clear All</button>
+    <button id="clearBtn">Clear All</button>
   <button id="saveBtn">Save Chart</button>
   <button id="loadBtn">Load Chart</button>
+  <button id="loadSwissBtn">Load Swiss</button>
+
   <input type="file" id="fileInput" accept=".json" hidden>
+  <input type="file" id="swissFileInput" accept=".json" hidden>
+
 </div>
 
 <table>
@@ -56,21 +74,59 @@
 <tbody id="tableBody"></tbody>
 </table>
 
+
+
+
+
+<h2 style="margin-top:40px">Planet → Planet Aspects</h2>
+<div style="margin:8px 0 6px">
+Base Planet :
+<select id="planetAspectPivot"></select>
+</div>
+
+<table id="planetAspectTable">
+<thead>
+<tr>
+<th>Planet</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+
+<h2 style="margin-top:40px">Planet → Cusp Aspects</h2>
+<table id="cuspAspectTable">
+<thead>
+<tr>
+<th>Planet</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+
+
+
+
+
+
+
 <script>
+/* ================= CORE DATA ================= */
+
 const SIGNS=["Aries","Taurus","Gemini","Cancer","Leo","Virgo","Libra","Scorpio","Sagittarius","Capricorn","Aquarius","Pisces"];
 const PLANETS=["Lagna","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha","Ketu","Venus"];
 
-const BENEFIC_PLANETS=["Jupiter","Venus","Budha","Chandra"];
-const MALEFIC_PLANETS=["Saturn","Mangala","Rahu","Ketu","Surya"];
+const data={};
 
-const data={}; PLANETS.forEach(p=>data[p]={sign:"",degree:""});
+const cusps = Array(12).fill(null);
+
+PLANETS.forEach(p=>data[p]={sign:"",degree:""});
 
 const pivotSelect=document.getElementById("pivotSelect");
+const planetAspectPivot = document.getElementById("planetAspectPivot");
 const tableBody=document.getElementById("tableBody");
 const ignoreDegreesChk=document.getElementById("ignoreDegrees");
 const reverseChk=document.getElementById("reverseCounting");
 const legacyOppConjChk=document.getElementById("legacyOppConj");
-const showRawDegreesChk=document.getElementById("showRawDegrees");
 const pivotRowChk=document.getElementById("pivotRowFromLagna");
 const fileInput=document.getElementById("fileInput");
 
@@ -79,155 +135,359 @@ let houseSystem="Vedic";
 let reverseCounting=false;
 let pivotRowFromLagna=true;
 let legacyOppConj=true;
-let showRawDegrees=false;
-let currentAspectPlanet="";
+let birthDate = null;
+
+
+
+/* ======================================================
+   SWISS EPHEMERIS JSON SUPPORT (ABS DEG → SIGN + DEG)
+   ====================================================== */
+
+const swissFileInput = document.getElementById("swissFileInput");
+
+document.getElementById("loadSwissBtn").onclick = () => swissFileInput.click();
+
+/* ---- absolute degree → sign + degree ---- */
+function absToSignDeg(abs){
+  let a = abs % 360;
+  if(a < 0) a += 360;
+
+  const signIndex = Math.floor(a / 30);
+  const degree = +(a - signIndex * 30).toFixed(2);
+
+  return {
+    sign: SIGNS[signIndex],
+    degree: Math.floor(degree)
+  };
+}
+
+/* ---- Swiss loader ---- */
+swissFileInput.onchange = e => {
+  const r = new FileReader();
+  r.onload = () => {
+    const o = JSON.parse(r.result);
+	
+	
+	if(o.meta && o.meta.datetime_utc){
+  birthDate = new Date(o.meta.datetime_utc);
+}
+
+    if(!o.lagna || !o.planets){
+      alert("❌ Invalid Swiss Ephemeris JSON");
+      return;
+    }
+
+    /* ---------- LAGNA ---------- */
+    const lag = absToSignDeg(o.lagna);
+    data.Lagna.sign = lag.sign;
+    data.Lagna.degree = lag.degree;
+
+    /* ---------- PLANETS ---------- */
+    Object.entries(o.planets).forEach(([k,v])=>{
+      if(!data[k]) return;
+      const p = absToSignDeg(v);
+      data[k].sign = p.sign;
+      data[k].degree = p.degree;
+    });
+	
+	
+	/* ---------- CUSPS ---------- */
+	/* ---------- CUSPS ---------- */
+	if(o.cusps){
+
+	  for(let i=0;i<12;i++){
+
+		const val = o.cusps[(i+1).toString()];
+
+		if(val===undefined || val===null){
+		  cusps[i]=null;
+		  continue;
+		}
+
+		let a = val % 360;
+		if(a<0) a+=360;
+
+		cusps[i] = +a.toFixed(2);
+	  }
+
+	}
+
+    /* ---------- RESET UI STATE ---------- */
+    pivotSelect.value = "Lagna";
+    ignoreDegrees = false;
+    reverseCounting = false;
+    legacyOppConj = true;
+    pivotRowFromLagna = true;
+    houseSystem = "Vedic";
+
+    ignoreDegreesChk.checked = false;
+    reverseChk.checked = false;
+    legacyOppConjChk.checked = true;
+    pivotRowChk.checked = true;
+    document.querySelector('input[value="Vedic"]').checked = true;
+
+    buildTable();
+
+	/* Auto select Moon Dasha Lord */
+	planetAspectPivot.value = getMoonDashaLord();
+
+	buildPlanetAspectTable();
+	recalc();
+
+  };
+
+  r.readAsText(e.target.files[0]);
+};
+
+
+
+
+/* ================= INIT ================= */
 
 PLANETS.forEach(p=>{
+
   const o=document.createElement("option");
-  o.value=p;o.textContent=p;
+  o.value=p;
+  o.textContent=p;
   pivotSelect.appendChild(o);
 });
 pivotSelect.value="Lagna";
+
+
+
+/* ---------- Planet Aspect Pivot Dropdown ---------- */
+[...PLANETS.filter(p=>p!=="Lagna"), ...PLANETS.filter(p=>p!=="Lagna")].forEach(p=>{
+  const o=document.createElement("option");
+  o.value=p;
+  o.textContent=p;
+  planetAspectPivot.appendChild(o);
+});
+
+planetAspectPivot.value="Surya";
+
+planetAspectPivot.onchange=()=>{
+  buildPlanetAspectTable();
+  buildCuspAspectTable();
+};
+
+/* ================= TABLE BUILD ================= */
 
 function buildTable(){
   tableBody.innerHTML="";
   const start=PLANETS.indexOf(pivotSelect.value);
   const ordered=[...PLANETS.slice(start),...PLANETS.slice(0,start)];
+
   ordered.forEach(p=>{
-    if(pivotSelect.value!=="Lagna"&&p==="Lagna")return;
+    if(pivotSelect.value!=="Lagna" && p==="Lagna") return;
+
     const tr=document.createElement("tr");
     tr.innerHTML=`
       <td>${p}</td>
-      <td><select data-p="${p}" data-t="sign"><option></option>${SIGNS.map(s=>`<option>${s}</option>`).join("")}</select></td>
-      <td><select data-p="${p}" data-t="deg"><option></option>${[...Array(30).keys()].map(i=>`<option>${i}</option>`).join("")}</select></td>
+      <td>
+        <select data-p="${p}" data-t="sign">
+          <option></option>
+          ${SIGNS.map(s=>`<option>${s}</option>`).join("")}
+        </select>
+      </td>
+      <td>
+        <select data-p="${p}" data-t="deg">
+          <option></option>
+          ${[...Array(30).keys()].map(i=>`<option>${i}</option>`).join("")}
+        </select>
+      </td>
       <td id="out_${p}"></td>
       <td id="degdiff_${p}"></td>
-      <td id="aspect_${p}"></td>`;
+      <td id="aspect_${p}"></td>
+    `;
     tableBody.appendChild(tr);
   });
 
   tableBody.querySelectorAll("select").forEach(sel=>{
     const p=sel.dataset.p;
-    if(sel.dataset.t==="sign")sel.value=data[p].sign;
-    else{sel.value=data[p].degree;sel.classList.toggle("deg-disabled",ignoreDegrees);}
+    if(sel.dataset.t==="sign"){
+      sel.value=data[p].sign;
+    }else{
+      sel.value=data[p].degree;
+      sel.classList.toggle("deg-disabled",ignoreDegrees);
+    }
     sel.onchange=()=>{
-      if(sel.dataset.t==="sign")data[p].sign=sel.value;
+      if(sel.dataset.t==="sign") data[p].sign=sel.value;
       else data[p].degree=sel.value;
       recalc();
     };
   });
 }
 
-function absDegree(s,d){return SIGNS.indexOf(s)*30+d;}
+/* ================= UTIL ================= */
+
+function absDegree(s,d){
+  return SIGNS.indexOf(s)*30 + d;
+}
+
+/* ================= RECALC CORE ================= */
 
 function recalc(){
-  const pivot=pivotSelect.value;
-  if(!data[pivot].sign||data[pivot].degree===""){clearOutputs();return;}
+  const pivot = pivotSelect.value;
 
-  const pivotAbs=absDegree(data[pivot].sign,+data[pivot].degree);
-  const lagnaAbs=data.Lagna.sign
-    ? absDegree(data.Lagna.sign,+data.Lagna.degree)
+  if(!data[pivot].sign || data[pivot].degree===""){
+    clearOutputs();
+    return;
+  }
+
+  const pivotAbs = absDegree(data[pivot].sign, +data[pivot].degree);
+  const lagnaAbs = (data.Lagna.sign && data.Lagna.degree!=="")
+    ? absDegree(data.Lagna.sign, +data.Lagna.degree)
     : null;
 
   PLANETS.forEach(p=>{
     const out=document.getElementById("out_"+p);
     const degOut=document.getElementById("degdiff_"+p);
     const aspOut=document.getElementById("aspect_"+p);
-    if(!out)return;
-    if(!data[p].sign||data[p].degree===""){out.textContent=degOut.textContent=aspOut.textContent="";return;}
+    if(!out) return;
 
-    const planetAbs=absDegree(data[p].sign,+data[p].degree);
+    if(!data[p].sign || data[p].degree===""){
+      out.textContent="";
+      degOut.textContent="";
+      aspOut.textContent="";
+      return;
+    }
 
-    let rawDiff=planetAbs-pivotAbs;
-    if(rawDiff<0)rawDiff+=360;
+    const planetAbs = absDegree(data[p].sign, +data[p].degree);
+
+    /* ===== DEGREE DIFFERENCE (ALWAYS PIVOT BASED) ===== */
+    let rawDiff = planetAbs - pivotAbs;
+    if(rawDiff < 0) rawDiff += 360;
 
     if(reverseCounting){
-      rawDiff=360-rawDiff;
-      if(rawDiff===360)rawDiff=0;
+      rawDiff = 360 - rawDiff;
+      if(rawDiff===360) rawDiff=0;
     }
 
-    let displayDiff;
-    if(showRawDegrees){
-      displayDiff=rawDiff;
-    }else if(legacyOppConj){
-      displayDiff=rawDiff>180?rawDiff-180:rawDiff;
-    }else{
-      displayDiff=rawDiff>180?360-rawDiff:rawDiff;
-    }
-    degOut.textContent=displayDiff+"°";
-
-    currentAspectPlanet=p;
-    aspOut.innerHTML=getAspectLabel(displayDiff,rawDiff,pivot);
-
-    let houseDiff = reverseCounting
-      ? pivotAbs - planetAbs
-      : planetAbs - pivotAbs;
-    if(houseDiff<0)houseDiff+=360;
-
-    let house=houseSystem==="Vedic"
-      ? Math.floor((houseDiff+15)/30)+1
-      : Math.floor(houseDiff/30)+1;
-    if(house>12)house-=12;
-
-    if(pivotRowFromLagna && p===pivot && pivot!=="Lagna" && lagnaAbs!==null){
-      let f=planetAbs-lagnaAbs;
-      if(f<0)f+=360;
-      house=houseSystem==="Vedic"
-        ? Math.floor((f+15)/30)+1
-        : Math.floor(f/30)+1;
-      if(house>12)house-=12;
+    let displayDiff = rawDiff;
+    if(legacyOppConj && rawDiff>180 && rawDiff<=359){
+      displayDiff = rawDiff - 180;
     }
 
-    out.textContent=house;
-  });
+    degOut.textContent = ignoreDegrees ? "" : displayDiff.toFixed(2)+"°";
+    aspOut.innerHTML = getAspectLabel(displayDiff, rawDiff);
+
+    /* ===== HOUSE CALCULATION (CORRECTED) ===== */
+    let basePivotAbs = pivotAbs;
+
+    if(pivotRowFromLagna && pivot!=="Lagna" && p===pivot && lagnaAbs!==null){
+      basePivotAbs = lagnaAbs;
+    }
+
+    let hdiff = reverseCounting
+  ? basePivotAbs - planetAbs
+  : planetAbs - basePivotAbs;
+
+if(hdiff < 0) hdiff += 360;
+
+
+    let house = houseSystem==="Vedic"
+      ? Math.floor((hdiff+15)/30)+1
+      : Math.floor(hdiff/30)+1;
+
+
+
+
+	   if(house>12) house-=12;
+	out.textContent = house;
+
+	});
+
+	buildPlanetAspectTable();
+	buildCuspAspectTable();
+	  
+  
+  
 }
+
+/* ================= CLEAR ================= */
 
 function clearOutputs(){
   PLANETS.forEach(p=>{
     ["out_","degdiff_","aspect_"].forEach(id=>{
       const e=document.getElementById(id+p);
-      if(e)e.textContent="";
+      if(e) e.textContent="";
     });
   });
 }
 
-pivotSelect.onchange=()=>{buildTable();recalc();};
-buildTable();
+/* ================= EVENTS ================= */
 
-ignoreDegreesChk.onchange=()=>{ignoreDegrees=ignoreDegreesChk.checked;buildTable();recalc();};
-reverseChk.onchange=()=>{reverseCounting=reverseChk.checked;recalc();};
-legacyOppConjChk.onchange=()=>{legacyOppConj=legacyOppConjChk.checked;recalc();};
-showRawDegreesChk.onchange=()=>{showRawDegrees=showRawDegreesChk.checked;recalc();};
-pivotRowChk.onchange=()=>{pivotRowFromLagna=pivotRowChk.checked;recalc();};
-document.querySelectorAll('input[name="houseSystem"]').forEach(r=>r.onchange=()=>{houseSystem=r.value;recalc();});
+pivotSelect.onchange=()=>{
+  buildTable();
+  recalc();
+};
+
+ignoreDegreesChk.onchange=()=>{
+  ignoreDegrees=ignoreDegreesChk.checked;
+  buildTable();
+  recalc();
+};
+
+reverseChk.onchange=()=>{
+  reverseCounting=reverseChk.checked;
+  recalc();
+};
+
+legacyOppConjChk.onchange=()=>{
+  legacyOppConj=legacyOppConjChk.checked;
+  recalc();
+};
+
+pivotRowChk.onchange=()=>{
+  pivotRowFromLagna=pivotRowChk.checked;
+  recalc();
+};
+
+document.querySelectorAll('input[name="houseSystem"]').forEach(r=>{
+  r.onchange=()=>{
+    houseSystem=r.value;
+    recalc();
+  };
+});
+
+/* ================= BUTTONS ================= */
 
 document.getElementById("clearBtn").onclick=()=>{
-  if(!confirm("⚠️ Are you sure you want to clear the entire chart?"))return;
+  if(!confirm("⚠️ Are you sure you want to clear the entire chart?")) return;
   PLANETS.forEach(p=>data[p]={sign:"",degree:""});
   pivotSelect.value="Lagna";
-  legacyOppConj=true; legacyOppConjChk.checked=true;
-  showRawDegrees=false; showRawDegreesChk.checked=false;
-  buildTable(); clearOutputs();
+  ignoreDegrees=false;
+  reverseCounting=false;
+  legacyOppConj=true;
+  pivotRowFromLagna=true;
+  ignoreDegreesChk.checked=false;
+  reverseChk.checked=false;
+  legacyOppConjChk.checked=true;
+  pivotRowChk.checked=true;
+  document.querySelector('input[value="Vedic"]').checked=true;
+  houseSystem="Vedic";
+  buildTable();
+  clearOutputs();
 };
 
 document.getElementById("saveBtn").onclick=()=>{
-  const b=new Blob([JSON.stringify({
+  const blob=new Blob([JSON.stringify({
     pivot:pivotSelect.value,
     ignoreDegrees,
     reverseCounting,
     legacyOppConj,
-    showRawDegrees,
     houseSystem,
     pivotRowFromLagna,
     data
   },null,2)],{type:"application/json"});
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(b);
+  a.href=URL.createObjectURL(blob);
   a.download="kundali_chart.json";
   a.click();
 };
 
 document.getElementById("loadBtn").onclick=()=>fileInput.click();
+
 fileInput.onchange=e=>{
   const r=new FileReader();
   r.onload=()=>{
@@ -237,82 +497,399 @@ fileInput.onchange=e=>{
     ignoreDegrees=o.ignoreDegrees||false;
     reverseCounting=o.reverseCounting||false;
     legacyOppConj=o.legacyOppConj!==false;
-    showRawDegrees=o.showRawDegrees||false;
     houseSystem=o.houseSystem||"Vedic";
     pivotRowFromLagna=o.pivotRowFromLagna!==false;
 
     ignoreDegreesChk.checked=ignoreDegrees;
     reverseChk.checked=reverseCounting;
     legacyOppConjChk.checked=legacyOppConj;
-    showRawDegreesChk.checked=showRawDegrees;
     pivotRowChk.checked=pivotRowFromLagna;
     document.querySelector(`input[value="${houseSystem}"]`).checked=true;
 
-    buildTable(); recalc();
+    buildTable();
+    recalc();
   };
   r.readAsText(e.target.files[0]);
 };
-</script>
 
-<script>
-const WESTERN_ASPECTS=[
-{d:0,o:8,n:"Conjunction",t:"neutral"},
-{d:18,o:1,n:"Vigintile",t:"good"},
-{d:22.5,o:.5,n:"Semi-Octile",t:"bad"},
-{d:30,o:3,n:"Semi-Sextile",t:"bad"},
-{d:36,o:1,n:"Decile",t:"good"},
-{d:40,o:1,n:"Novile",t:"good"},
-{d:45,o:3,n:"Semi-Square",t:"bad"},
-{d:51.43,o:1.5,n:"Septile",t:"neutral"},
-{d:54,o:1,n:"Tridecile (54°)",t:"good"},
-{d:60,o:5,n:"Sextile",t:"good"},
-{d:67.5,o:1,n:"Sesquile",t:"bad"},
-{d:72,o:2,n:"Quintile",t:"good"},
-{d:80,o:1,n:"Binovile",t:"good"},
-{d:90,o:8,n:"Square",t:"bad"},
-{d:102.86,o:1.5,n:"Biseptile",t:"neutral"},
-{d:105,o:1,n:"Squine",t:"bad"},
-{d:108,o:1,n:"Tridecile",t:"good"},
-{d:120,o:10,n:"Trine",t:"good"},
-{d:135,o:3,n:"Sesquiquadrate",t:"bad"},
-{d:144,o:2,n:"Bi-Quintile",t:"good"},
-{d:150,o:4,n:"Quincunx",t:"bad"},
-{d:154.29,o:1.5,n:"Triseptile",t:"neutral"},
-{d:160,o:1,n:"Quadnovile",t:"neutral"},
-{d:165,o:2,n:"Quindecile",t:"bad"},
-{d:171,o:1,n:"19-Novile",t:"neutral"},
-{d:162,o:1,n:"18th Harmonic",t:"neutral"},
-{d:168,o:1,n:"Bi-Novile",t:"neutral"},
-{d:180,o:8,n:"Opposition",t:"neutral"}
+/* ================= INIT ================= */
+buildTable();
+
+
+/* ======================================================
+   FINAL PRACTICAL ASPECT SET
+   ====================================================== */
+
+const WESTERN_ASPECTS = [
+
+  /* ================= WHITE (CORE STRUCTURAL) ================= */
+  { d:0,     o:8,   n:"Conjuct",  c:"aspect-white" },
+	{ d:180,   o:8,   n:"Oppo",   c:"aspect-bad" },
+
+  /* ================= GREEN (STRONG HARMONY) ================= */
+  { d:60,    o:6,   n:"Sextile",        c:"aspect-good" },
+  { d:120,   o:8,   n:"Trine",          c:"aspect-good" },
+  { d:72,    o:2,   n:"Quintile",       c:"aspect-good" },
+  { d:144,   o:2,   n:"Biquintile",     c:"aspect-good" },
+
+  /* ================= YELLOW (SOFT HARMONY) ================= */
+  { d:18,    o:1,   n:"Vigintile",      c:"aspect-white" },
+  { d:36,    o:1,   n:"Decile",         c:"aspect-white" },
+  { d:54,    o:1,   n:"Tri-Vigintile",  c:"aspect-white" },
+  { d:40,    o:1.5, n:"Novile",         c:"aspect-white" },
+  { d:80,    o:1.5, n:"Binovile",       c:"aspect-white" },
+
+  /* ================= ORANGE (NEUTRAL / ADJUSTMENT) ================= */
+  { d:30,    o:3,   n:"Semi-Sextile",   c:"aspect-good" },
+  { d:150,   o:4,   n:"Quincunx",       c:"aspect-bad" },
+
+  /* Septile family (karmic / fated → neutral-intense) */
+  { d:51.43,  o:1.5, n:"Septile",       c:"aspect-neutral" },
+  { d:102.86, o:1.5, n:"Biseptile",     c:"aspect-neutral" },
+  { d:154.29, o:1.5, n:"Triseptile",    c:"aspect-neutral" },
+
+  /* ================= RED (TENSE / CHALLENGING) ================= */
+  { d:45,    o:3,   n:"Semi-Square",     c:"aspect-bad" },
+  { d:90,    o:8,   n:"Square",          c:"aspect-bad" },
+  { d:135,   o:3,   n:"Sesqui-Quadrate",  c:"aspect-bad" },
+  { d:165,   o:2,   n:"Quin-Decile",      c:"aspect-bad" }
 ];
 
-function getConjOppClass(p1,p2){
-  const b1=BENEFIC_PLANETS.includes(p1);
-  const b2=BENEFIC_PLANETS.includes(p2);
-  const m1=MALEFIC_PLANETS.includes(p1);
-  const m2=MALEFIC_PLANETS.includes(p2);
-  if(m1&&m2)return "aspect-bad";
-  if(b1&&b2)return "aspect-good";
-  return "aspect-neutral";
+
+
+
+
+/* ======================================================
+   MOON NAKSHATRA → VIMSHOTTARI LORD
+   ====================================================== */
+
+const NAKSHATRA_LORDS = [
+"Ketu","Venus","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha",
+"Ketu","Venus","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha",
+"Ketu","Venus","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha"
+];
+
+function getMoonDashaLord(){
+
+  if(!data.Chandra.sign) return "Surya";
+
+  const moonAbs = absDegree(data.Chandra.sign,+data.Chandra.degree);
+
+  const NAK_LENGTH = 360/27;
+
+  const nakIndex = Math.floor(moonAbs / NAK_LENGTH);
+
+  const nakStart = nakIndex * NAK_LENGTH;
+
+  const progress = (moonAbs - nakStart) / NAK_LENGTH;
+
+  const LORDS = [
+    "Ketu","Venus","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha",
+    "Ketu","Venus","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha",
+    "Ketu","Venus","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha"
+  ];
+
+  const DASHA_YEARS = {
+    Ketu:7,
+    Venus:20,
+    Surya:6,
+    Chandra:10,
+    Mangala:7,
+    Rahu:18,
+    Jupiter:16,
+    Saturn:19,
+    Budha:17
+  };
+
+  let lord = LORDS[nakIndex];
+
+  /* Birth Mahadasha length */
+  const totalYears = DASHA_YEARS[lord];
+
+  const balanceYears = totalYears * (1-progress);
+
+  /* Approx progression to current date */
+if(!birthDate) return lord;
+
+const birth = birthDate;
+const now = new Date();
+
+  const yearsPassed = (now - birth) / (365.25*24*3600*1000);
+
+
+
+const order = ["Ketu","Venus","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha"];
+
+
+
+
+/* total elapsed since birth */
+const elapsed = yearsPassed;
+
+/* years after first mahadasha ended */
+let cyclePos = elapsed - balanceYears;
+
+/* still inside first mahadasha */
+if(cyclePos < 0) return lord;
+
+/* Vimshottari cycle */
+cyclePos = cyclePos % 120;
+
+
+
+
+let idx = (order.indexOf(lord) + 1) % 9;
+
+while(true){
+
+  const d = DASHA_YEARS[order[idx]];
+
+  if(cyclePos <= d){
+    return order[idx];
+  }
+
+  cyclePos -= d;
+
+  idx = (idx+1) % 9;
+
+}
+  
+  
+  
 }
 
-function getAspectLabel(diff,rawDiff,pivot){
+
+
+
+
+
+
+
+
+
+
+
+/* ======================================================
+   DEGREE QUALITY (FALLBACK)
+   ====================================================== */
+
+function degreeQuality(diff){
+  if(
+    (diff>=0   && diff<=12)  ||
+    (diff>=54  && diff<=66)  ||
+    (diff>=114 && diff<=126)
+  ){
+    return {t:"Good",c:"aspect-good"};
+  }
+
+  if(
+    (diff>=39  && diff<=51)  ||
+    (diff>=84  && diff<=96)  ||
+    (diff>=129 && diff<=141) ||
+    (diff>=159 && diff<=171)
+  ){
+    return {t:"Bad",c:"aspect-bad"};
+  }
+
+  return {t:"Neutral",c:"aspect-neutral"};
+}
+
+
+
+
+
+
+
+
+
+
+/* ======================================================
+   ASPECT RESOLVER (STABLE)
+   ====================================================== */
+
+function getAspectLabel(diff, rawDiff){
   for(const a of WESTERN_ASPECTS){
-    let orb=a.o;
-    if(a.d===0 && diff<=orb){
-      return `<span class="${getConjOppClass(currentAspectPlanet,pivot)}">${a.n}</span>`;
+    if(a.d===0){
+      if(diff<=a.o){
+        return `<span class="${a.c}">${a.n}</span>`;
+      }
     }
-    if(a.d===180 && Math.abs(rawDiff-180)<=orb){
-      return `<span class="${getConjOppClass(currentAspectPlanet,pivot)}">${a.n}</span>`;
+    else if(a.d===180){
+      if(Math.abs(rawDiff-180)<=a.o){
+        return `<span class="${a.c}">${a.n}</span>`;
+      }
     }
-    if(Math.abs(diff-a.d)<=orb){
-      if(a.t==="good")return `<span class="aspect-good">${a.n}</span>`;
-      if(a.t==="bad")return `<span class="aspect-bad">${a.n}</span>`;
-      return `<span class="aspect-neutral">${a.n}</span>`;
+    else{
+      if(Math.abs(diff-a.d)<=a.o){
+        return `<span class="${a.c}">${a.n}</span>`;
+      }
     }
   }
-  return "";
+
+  const q=degreeQuality(diff);
+  return `<span class="${q.c}">${q.t}</span>`;
 }
+
+
+
+
+function buildPlanetAspectTable(){
+
+const table=document.querySelector("#planetAspectTable tbody");
+/* ---------- ROTATION ORDER ---------- */
+const pivot = planetAspectPivot.value || "Surya";
+
+const basePlanets = PLANETS.filter(p=>p!=="Lagna");
+
+const start = basePlanets.indexOf(pivot);
+
+const ordered = [
+  ...basePlanets.slice(start),
+  ...basePlanets.slice(0,start)
+];
+const head=document.querySelector("#planetAspectTable thead tr");
+
+head.innerHTML="<th>Planet</th>"+ordered.map(p=>{
+
+  if(!data[p].sign) return `<th>${p}</th>`;
+
+  const abs = absDegree(data[p].sign,+data[p].degree);
+
+  return `<th>${p}<br>${abs.toFixed(2)}°</th>`;
+
+}).join("");
+
+table.innerHTML="";
+
+ordered.forEach(p1=>{
+
+  if(!data[p1].sign) return;
+
+
+
+
+ const tr=document.createElement("tr");
+
+const abs1=absDegree(data[p1].sign,+data[p1].degree);
+
+let html=`<td>${p1}<br>${abs1.toFixed(2)}°</td>`;
+
+  ordered.forEach(p2=>{
+
+    if(!data[p2].sign){
+      html+="<td></td>";
+      return;
+    }
+	
+	
+	if(p1===p2){
+	  html+="<td></td>";
+	  return;
+	}
+
+    const abs2=absDegree(data[p2].sign,+data[p2].degree);
+
+    let diff=Math.abs(abs1-abs2);
+    if(diff>180) diff=360-diff;
+
+    html+=`<td>${getAspectLabel(diff,diff)}<br>${diff.toFixed(2)}°</td>`;
+  });
+
+  tr.innerHTML=html;
+  table.appendChild(tr);
+
+});
+}
+
+
+
+
+
+
+
+
+function buildCuspAspectTable(){
+
+const table=document.querySelector("#cuspAspectTable tbody");
+
+
+/* ---------- ROTATION ORDER (same as planet table) ---------- */
+const pivot = planetAspectPivot.value || "Surya";
+
+const basePlanets = PLANETS.filter(p=>p!=="Lagna");
+
+const start = basePlanets.indexOf(pivot);
+
+const ordered = [
+  ...basePlanets.slice(start),
+  ...basePlanets.slice(0,start)
+];
+
+const head=document.querySelector("#cuspAspectTable thead tr");
+
+
+
+
+head.innerHTML="<th>Planet</th>"+[...Array(12)].map((_,i)=>{
+
+  let c = cusps[i];
+
+  /* C1 must always equal Lagna */
+  if(i===0 && data.Lagna.sign){
+    c = absDegree(data.Lagna.sign,+data.Lagna.degree);
+  }
+
+  if(c===null) return `<th>C${i+1}</th>`;
+
+  return `<th>C${i+1}<br>${c.toFixed(2)}°</th>`;
+
+}).join("");
+
+
+
+
+
+
+
+table.innerHTML="";
+
+ordered.forEach(p=>{
+
+  if(!data[p].sign) return;
+
+ const tr=document.createElement("tr");
+
+const abs1=absDegree(data[p].sign,+data[p].degree);
+
+let html=`<td>${p}<br>${abs1.toFixed(2)}°</td>`;
+
+
+
+
+  cusps.forEach((c,i)=>{
+
+  if(i===0 && data.Lagna.sign){
+    c = absDegree(data.Lagna.sign,+data.Lagna.degree);
+  }
+
+    if(c===null){
+      html+="<td></td>";
+      return;
+    }
+
+    let diff=Math.abs(abs1-c);
+    if(diff>180) diff=360-diff;
+
+    html+=`<td>${getAspectLabel(diff,diff)}<br>${diff.toFixed(2)}°</td>`;
+  });
+
+  tr.innerHTML=html;
+  table.appendChild(tr);
+
+});
+}
+
+
 </script>
 
 </body>
