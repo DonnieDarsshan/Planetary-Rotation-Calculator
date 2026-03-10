@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-  body{background:#0f172a;color:#e5e7eb;font-family:Arial,sans-serif;padding:20px}
+  body{background:#0D0226;color:#e5e7eb;font-family:Arial,sans-serif;padding:20px}
   h1{font-size:22px;margin-bottom:10px}
   select,button{background:#020617;color:#e5e7eb;border:1px solid #334155;padding:4px 8px;margin-right:6px}
   table{
@@ -15,8 +15,8 @@
   margin-top:12px;
   table-layout:fixed;
 }
-  th,td{
-  border:1px solid #334155;
+th,td{
+  border:1px solid var(--grid-color,#ffffff);
   padding:6px;
   text-align:center;
   word-wrap:break-word;
@@ -25,6 +25,21 @@
 
 
   th{background:#020617}
+    /* ===== Aspect Tables Header Color ===== */
+ #planetAspectTable thead th,
+#cuspAspectTable thead th{
+  background:#800040;
+}
+
+  /* ===== Aspect Tables First Column Color ===== */
+  #planetAspectTable tbody td:first-child,
+#cuspAspectTable tbody td:first-child{
+  background:#003366;
+  font-weight:600;
+}
+
+
+
   select.deg-disabled{opacity:.4;pointer-events:none}
 
   .aspect-good{color:#22c55e;font-weight:600}
@@ -80,8 +95,15 @@
 
 <h2 style="margin-top:40px">Planet → Planet Aspects</h2>
 <div style="margin:8px 0 6px">
+
 Base Planet :
 <select id="planetAspectPivot"></select>
+
+<label style="margin-left:12px; display:inline-flex; align-items:center; gap:4px;">
+<input type="checkbox" id="fillPlanetsChk" checked>
+Fill Planets
+</label>
+
 </div>
 
 <table id="planetAspectTable">
@@ -123,6 +145,7 @@ PLANETS.forEach(p=>data[p]={sign:"",degree:""});
 
 const pivotSelect=document.getElementById("pivotSelect");
 const planetAspectPivot = document.getElementById("planetAspectPivot");
+const fillPlanetsChk = document.getElementById("fillPlanetsChk");
 const tableBody=document.getElementById("tableBody");
 const ignoreDegreesChk=document.getElementById("ignoreDegrees");
 const reverseChk=document.getElementById("reverseCounting");
@@ -229,7 +252,7 @@ swissFileInput.onchange = e => {
     buildTable();
 
 	/* Auto select Moon Dasha Lord */
-	planetAspectPivot.value = getMoonDashaLord();
+	planetAspectPivot.value = getBirthDashaLord();
 
 	buildPlanetAspectTable();
 	recalc();
@@ -256,18 +279,49 @@ pivotSelect.value="Lagna";
 
 
 /* ---------- Planet Aspect Pivot Dropdown ---------- */
-[...PLANETS.filter(p=>p!=="Lagna"), ...PLANETS.filter(p=>p!=="Lagna")].forEach(p=>{
+/* ---------- SPECIAL OPTIONS FIRST ---------- */
+["Birth","Current"].forEach(p=>{
   const o=document.createElement("option");
   o.value=p;
   o.textContent=p;
   planetAspectPivot.appendChild(o);
 });
 
-planetAspectPivot.value="Surya";
+/* ---------- NORMAL PLANETS ---------- */
+/* ---------- NORMAL PLANETS (REPEATED TWICE) ---------- */
+
+const aspectPlanets = PLANETS.filter(p=>p!=="Lagna");
+
+/* first cycle */
+aspectPlanets.forEach(p=>{
+  const o=document.createElement("option");
+  o.value=p;
+  o.textContent=p;
+  planetAspectPivot.appendChild(o);
+});
+
+/* second cycle */
+aspectPlanets.forEach(p=>{
+  const o=document.createElement("option");
+  o.value=p;
+  o.textContent=p;
+  planetAspectPivot.appendChild(o);
+});
+
+planetAspectPivot.value="Birth";
+
+
+
+
 
 planetAspectPivot.onchange=()=>{
   buildPlanetAspectTable();
   buildCuspAspectTable();
+};
+
+
+fillPlanetsChk.onchange=()=>{
+  buildPlanetAspectTable();
 };
 
 /* ================= TABLE BUILD ================= */
@@ -523,11 +577,11 @@ buildTable();
 const WESTERN_ASPECTS = [
 
   /* ================= WHITE (CORE STRUCTURAL) ================= */
-  { d:0,     o:8,   n:"Conjuct",  c:"aspect-white" },
+  { d:0, o:13, n:"Conjuct-Depends", c:"aspect-white" },
 	{ d:180,   o:8,   n:"Oppo",   c:"aspect-bad" },
 
   /* ================= GREEN (STRONG HARMONY) ================= */
-  { d:60,    o:6,   n:"Sextile",        c:"aspect-good" },
+  { d:60,    o:5,   n:"Sextile",        c:"aspect-good" },
   { d:120,   o:8,   n:"Trine",          c:"aspect-good" },
   { d:72,    o:2,   n:"Quintile",       c:"aspect-good" },
   { d:144,   o:2,   n:"Biquintile",     c:"aspect-good" },
@@ -550,7 +604,7 @@ const WESTERN_ASPECTS = [
 
   /* ================= RED (TENSE / CHALLENGING) ================= */
   { d:45,    o:3,   n:"Semi-Square",     c:"aspect-bad" },
-  { d:90,    o:8,   n:"Square",          c:"aspect-bad" },
+  { d:90,    o:6,   n:"Square",          c:"aspect-bad" },
   { d:135,   o:3,   n:"Sesqui-Quadrate",  c:"aspect-bad" },
   { d:165,   o:2,   n:"Quin-Decile",      c:"aspect-bad" }
 ];
@@ -569,7 +623,26 @@ const NAKSHATRA_LORDS = [
 "Ketu","Venus","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha"
 ];
 
-function getMoonDashaLord(){
+function getBirthDashaLord(){
+
+  if(!data.Chandra.sign) return "Surya";
+
+  const moonAbs = absDegree(data.Chandra.sign,+data.Chandra.degree);
+
+  const NAK_LENGTH = 360/27;
+
+  const nakIndex = Math.floor(moonAbs / NAK_LENGTH);
+
+  const LORDS = [
+    "Ketu","Venus","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha",
+    "Ketu","Venus","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha",
+    "Ketu","Venus","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha"
+  ];
+
+  return LORDS[nakIndex];
+}
+
+function getCurrentDashaLord(){
 
   if(!data.Chandra.sign) return "Surya";
 
@@ -675,7 +748,7 @@ while(true){
 
 function degreeQuality(diff){
   if(
-    (diff>=0   && diff<=12)  ||
+    (diff>=14  && diff<=26)  ||
     (diff>=54  && diff<=66)  ||
     (diff>=114 && diff<=126)
   ){
@@ -710,10 +783,10 @@ function degreeQuality(diff){
 function getAspectLabel(diff, rawDiff){
   for(const a of WESTERN_ASPECTS){
     if(a.d===0){
-      if(diff<=a.o){
-        return `<span class="${a.c}">${a.n}</span>`;
-      }
-    }
+	  if(Math.abs(rawDiff) <= a.o){
+		return `<span class="${a.c}">${a.n}</span>`;
+	  }
+	}
     else if(a.d===180){
       if(Math.abs(rawDiff-180)<=a.o){
         return `<span class="${a.c}">${a.n}</span>`;
@@ -737,7 +810,16 @@ function buildPlanetAspectTable(){
 
 const table=document.querySelector("#planetAspectTable tbody");
 /* ---------- ROTATION ORDER ---------- */
-const pivot = planetAspectPivot.value || "Surya";
+let pivot = planetAspectPivot.value || "Surya";
+
+/* ---------- SPECIAL PIVOTS ---------- */
+if(pivot==="Birth"){
+  pivot = getBirthDashaLord();
+}
+
+if(pivot==="Current"){
+  pivot = getCurrentDashaLord();
+}
 
 const basePlanets = PLANETS.filter(p=>p!=="Lagna");
 
@@ -783,16 +865,41 @@ let html=`<td>${p1}<br>${abs1.toFixed(2)}°</td>`;
 	
 	
 	if(p1===p2){
-	  html+="<td></td>";
-	  return;
-	}
+
+  if(!fillPlanetsChk.checked){
+    html+="<td></td>";
+    return;
+  }
+
+  let reduced = abs1;
+
+  if(reduced > 180){
+    reduced = 360 - reduced;
+  }
+
+  const label = getAspectLabel(reduced,reduced);
+
+  html+=`<td>${label}<br>${reduced.toFixed(2)}°</td>`;
+  return;
+}
 
     const abs2=absDegree(data[p2].sign,+data[p2].degree);
 
     let diff=Math.abs(abs1-abs2);
     if(diff>180) diff=360-diff;
 
-    html+=`<td>${getAspectLabel(diff,diff)}<br>${diff.toFixed(2)}°</td>`;
+    let label = getAspectLabel(diff,diff);
+
+	/* Rahu-Ketu opposition override (yellow) */
+	if(
+	  ((p1==="Rahu" && p2==="Ketu") || (p1==="Ketu" && p2==="Rahu")) &&
+	  Math.abs(diff-180) <= 8
+	){
+	  label = `<span class="aspect-white">Oppo</span>`;
+	}
+
+	html+=`<td>${label}<br>${diff.toFixed(2)}°</td>`;
+
   });
 
   tr.innerHTML=html;
@@ -814,7 +921,16 @@ const table=document.querySelector("#cuspAspectTable tbody");
 
 
 /* ---------- ROTATION ORDER (same as planet table) ---------- */
-const pivot = planetAspectPivot.value || "Surya";
+let pivot = planetAspectPivot.value || "Surya";
+
+/* ---------- SPECIAL PIVOTS ---------- */
+if(pivot==="Birth"){
+  pivot = getBirthDashaLord();
+}
+
+if(pivot==="Current"){
+  pivot = getCurrentDashaLord();
+}
 
 const basePlanets = PLANETS.filter(p=>p!=="Lagna");
 
@@ -889,6 +1005,36 @@ let html=`<td>${p}<br>${abs1.toFixed(2)}°</td>`;
 });
 }
 
+
+
+
+
+
+
+/* ================= SMART GRID COLOR ================= */
+
+function getBrightness(hex){
+  hex = hex.replace("#","");
+  const r=parseInt(hex.substring(0,2),16);
+  const g=parseInt(hex.substring(2,4),16);
+  const b=parseInt(hex.substring(4,6),16);
+  return (r*299 + g*587 + b*114)/1000;
+}
+
+function updateGridColor(){
+  const bg = getComputedStyle(document.body).backgroundColor;
+
+  const rgb = bg.match(/\d+/g).map(Number);
+  const brightness = (rgb[0]*299 + rgb[1]*587 + rgb[2]*114)/1000;
+
+  if(brightness > 140){
+    document.documentElement.style.setProperty("--grid-color","#000000");
+  }else{
+    document.documentElement.style.setProperty("--grid-color","#ffffff");
+  }
+}
+
+updateGridColor();
 
 </script>
 
