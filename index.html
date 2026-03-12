@@ -62,8 +62,8 @@ th,td{
   <label><input type="checkbox" id="legacyOppConj" checked> Subtract 180°</label>
   <label><input type="checkbox" id="pivotRowFromLagna" checked> Actual Position</label>
 
-  <label><input type="radio" name="houseSystem" value="KP"> KP</label>
-  <label><input type="radio" name="houseSystem" value="Vedic" checked> Vedic</label>
+  <label><input type="radio" name="houseSystem" value="KP" checked> KP</label>
+ <label><input type="radio" name="houseSystem" value="Vedic"> Vedic</label>
 
     <button id="clearBtn">Clear All</button>
   <button id="saveBtn">Save Chart</button>
@@ -154,7 +154,7 @@ const pivotRowChk=document.getElementById("pivotRowFromLagna");
 const fileInput=document.getElementById("fileInput");
 
 let ignoreDegrees=false;
-let houseSystem="Vedic";
+let houseSystem="KP";
 let reverseCounting=false;
 let pivotRowFromLagna=true;
 let legacyOppConj=true;
@@ -241,7 +241,7 @@ swissFileInput.onchange = e => {
     reverseCounting = false;
     legacyOppConj = true;
     pivotRowFromLagna = true;
-    houseSystem = "Vedic";
+    houseSystem = "KP";
 
     ignoreDegreesChk.checked = false;
     reverseChk.checked = false;
@@ -806,6 +806,35 @@ function getAspectLabel(diff, rawDiff){
 
 
 
+
+
+function getHouseFromPivot(pivotPlanet, targetPlanet){
+
+  if(!data[pivotPlanet].sign || !data[targetPlanet].sign) return "";
+
+  const pivotAbs = absDegree(data[pivotPlanet].sign,+data[pivotPlanet].degree);
+  const targetAbs = absDegree(data[targetPlanet].sign,+data[targetPlanet].degree);
+
+  let diff = reverseCounting
+    ? pivotAbs - targetAbs
+    : targetAbs - pivotAbs;
+
+  if(diff < 0) diff += 360;
+
+  let house = houseSystem==="Vedic"
+    ? Math.floor((diff+15)/30)+1
+    : Math.floor(diff/30)+1;
+
+  if(house>12) house-=12;
+
+  return house;
+}
+
+
+
+
+
+
 function buildPlanetAspectTable(){
 
 const table=document.querySelector("#planetAspectTable tbody");
@@ -879,7 +908,8 @@ let html=`<td>${p1}<br>${abs1.toFixed(2)}°</td>`;
 
   const label = getAspectLabel(reduced,reduced);
 
-  html+=`<td>${label}<br>${reduced.toFixed(2)}°</td>`;
+  const house = getHouseFromPivot("Lagna",p1);
+	html+=`<td>${label}<br>[${house}] ${reduced.toFixed(2)}°</td>`;
   return;
 }
 
@@ -898,7 +928,8 @@ let html=`<td>${p1}<br>${abs1.toFixed(2)}°</td>`;
 	  label = `<span class="aspect-white">Oppo</span>`;
 	}
 
-	html+=`<td>${label}<br>${diff.toFixed(2)}°</td>`;
+	const house = getHouseFromPivot(p1,p2);
+	html+=`<td>${label}<br>[${house}] ${diff.toFixed(2)}°</td>`;
 
   });
 
